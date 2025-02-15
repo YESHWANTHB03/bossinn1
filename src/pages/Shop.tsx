@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Plus, Edit } from 'lucide-react';
 
 type InventoryItem = {
   id: string;
@@ -17,18 +17,22 @@ type ActiveBooking = {
   room_number: number;
 };
 
+type ModalType = 'add' | 'edit' | null;
+
 function Shop() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [activeBookings, setActiveBookings] = useState<ActiveBooking[]>([]);
   const [selectedBooking, setSelectedBooking] = useState<string>('');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending'>('pending');
-  const [showAddItemDialog, setShowAddItemDialog] = useState(false);
+  const [modalType, setModalType] = useState<ModalType>(null);
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [newItem, setNewItem] = useState({
     item_name: '',
     quantity: '',
     price: ''
   });
+  const [additionalQuantity, setAdditionalQuantity] = useState('');
 
   useEffect(() => {
     fetchInventory();
@@ -67,7 +71,6 @@ function Shop() {
       return;
     }
 
-    // Filter out bookings with missing room data
     const validBookings = (data || []).filter(booking => booking.rooms != null);
     
     setActiveBookings(validBookings.map(booking => ({
@@ -93,8 +96,32 @@ function Shop() {
     }
 
     toast.success('Item added successfully');
-    setShowAddItemDialog(false);
+    setModalType(null);
     setNewItem({ item_name: '', quantity: '', price: '' });
+    fetchInventory();
+  }
+
+  async function handleEditItem(e: React.FormEvent) {
+    e.preventDefault();
+    
+    if (!selectedItem) return;
+
+    const newQuantity = selectedItem.quantity + parseInt(additionalQuantity);
+    
+    const { error } = await supabase
+      .from('inventory')
+      .update({ quantity: newQuantity })
+      .eq('id', selectedItem.id);
+
+    if (error) {
+      toast.error('Failed to update item quantity');
+      return;
+    }
+
+    toast.success('Quantity updated successfully');
+    setModalType(null);
+    setSelectedItem(null);
+    setAdditionalQuantity('');
     fetchInventory();
   }
 
@@ -132,7 +159,7 @@ function Shop() {
         }
         
         if (item.quantity < purchase.quantity) {
-          toast.error('Insufficient quantity for ${item.item_name}');
+          toast.error(`Insufficient quantity for ${item.item_name}`);
           return;
         }
 
@@ -176,10 +203,10 @@ function Shop() {
 
   return (
     <div className="max-w-4xl mx-auto p-4">
-      <div className="flex flex-col md:flex-row justify-between items-center mb-8">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-4 md:mb-0">Shop & Inventory</h1>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">Shop & Inventory</h1>
         <button
-          onClick={() => setShowAddItemDialog(true)}
+          onClick={() => setModalType('add')}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
         >
           <Plus className="w-5 h-5" />
@@ -204,31 +231,34 @@ function Shop() {
       </div>
 
       <div className="bg-white rounded-lg shadow-md overflow-hidden mb-6">
-        <div className="overflow-x-auto">
+        <div className="hidden md:block">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   ITEM
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   PRICE
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   AVAILABLE
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   QUANTITY
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ACTIONS
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {inventory.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-4 py-4 whitespace-nowrap">{item.item_name}</td>
-                  <td className="px-4 py-4 whitespace-nowrap">₹{item.price}</td>
-                  <td className="px-4 py-4 whitespace-nowrap">{item.quantity}</td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap">{item.item_name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">₹{item.price}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{item.quantity}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <input
                       type="number"
                       min="0"
@@ -241,14 +271,60 @@ function Shop() {
                       className="w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     />
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <button
+                      onClick={() => {
+                        setSelectedItem(item);
+                        setModalType('edit');
+                      }}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <Edit className="w-5 h-5" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <div className="md:hidden">
+          {inventory.map((item) => (
+            <div key={item.id} className="p-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="font-medium">{item.item_name}</p>
+                  <p className="text-sm text-gray-500">₹{item.price}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Available: {item.quantity}</p>
+                  <input
+                    type="number"
+                    min="0"
+                    max={item.quantity}
+                    value={quantities[item.id] || 0}
+                    onChange={(e) => setQuantities({
+                      ...quantities,
+                      [item.id]: parseInt(e.target.value) || 0
+                    })}
+                    className="w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedItem(item);
+                    setModalType('edit');
+                  }}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  <Edit className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 mb-6">
+      <div className="flex items-center space-x-4 mb-6">
         <label className="flex items-center space-x-2">
           <input
             type="radio"
@@ -277,7 +353,7 @@ function Shop() {
         Complete Purchase
       </button>
 
-      {showAddItemDialog && (
+      {modalType === 'add' && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
             <h2 className="text-xl font-bold mb-4">Add New Item</h2>
@@ -324,7 +400,7 @@ function Shop() {
               <div className="flex justify-end space-x-4 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowAddItemDialog(false)}
+                  onClick={() => setModalType(null)}
                   className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors duration-200"
                 >
                   Cancel
@@ -334,6 +410,61 @@ function Shop() {
                   className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200"
                 >
                   Add Item
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {modalType === 'edit' && selectedItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Update Item Quantity</h2>
+            <form onSubmit={handleEditItem} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Item Name
+                </label>
+                <p className="text-gray-800 font-medium">{selectedItem.item_name}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Current Quantity
+                </label>
+                <p className="text-gray-800 font-medium">{selectedItem.quantity}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Add Quantity
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={additionalQuantity}
+                  onChange={(e) => setAdditionalQuantity(e.target.value)}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Enter quantity to add"
+                />
+              </div>
+              <div className="flex justify-end space-x-4 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalType(null);
+                    setSelectedItem(null);
+                    setAdditionalQuantity('');
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors duration-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200"
+                >
+                  Update Quantity
                 </button>
               </div>
             </form>
